@@ -14,6 +14,7 @@ group :maintenance, optional: true do
 	
 	gem "socketry"
 	gem "agent-context"
+	gem "agent-skills"
 	
 	gem "decode"
 	
