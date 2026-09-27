@@ -22,6 +22,12 @@ module Laiya
 				upgrade
 			].freeze
 			
+			# Initialize a provider for OpenAI or another compatible endpoint.
+			# @option :api_key [String | Nil] The bearer token for the upstream service.
+			# @option :endpoint [String | Async::HTTP::Endpoint] The upstream HTTP endpoint.
+			# @option :client [Interface(:call) | Nil] An optional externally managed HTTP client.
+			# @option :organization [String | Nil] An optional OpenAI organization ID.
+			# @option :project [String | Nil] An optional OpenAI project ID.
 			def initialize(api_key: ENV["OPENAI_API_KEY"], endpoint: DEFAULT_ENDPOINT, client: nil, organization: nil, project: nil, **client_options)
 				@endpoint = Async::HTTP::Endpoint[endpoint]
 				@api_key = api_key
@@ -33,11 +39,16 @@ module Laiya
 			
 			attr :endpoint
 			
+			# Fetch the upstream model-list response.
+			# @returns [Protocol::HTTP::Response] The raw model-list response.
 			# Fetch the upstream OpenAI-compatible model list as a raw HTTP response.
 			def models
 				self.call(Protocol::HTTP::Request["GET", "/v1/models"])
 			end
 			
+			# Forward a request without transforming its body.
+			# @parameter request [Protocol::HTTP::Request] The request to send upstream.
+			# @returns [Protocol::HTTP::Response] The unmodified upstream response.
 			def call(request)
 				headers = forwarded_headers(request.headers)
 				headers["authorization"] = "Bearer #{@api_key}" if @api_key
@@ -59,6 +70,7 @@ module Laiya
 				return @client.call(upstream_request)
 			end
 			
+			# Close the HTTP client when this provider created it.
 			def close
 				@client.close if @owns_client
 			end

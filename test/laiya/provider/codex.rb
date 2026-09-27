@@ -25,6 +25,7 @@ describe Laiya::Provider::Codex do
 				item: {id: "msg_123", type: "message", role: "assistant", content: []},
 			},
 			{type: "response.output_text.delta", delta: "Hello"},
+			{type: "response.unknown"},
 			{
 				type: "response.completed",
 				response: {
@@ -59,6 +60,147 @@ describe Laiya::Provider::Codex do
 	let(:provider) {subject.new(authentication: auth, client: client)}
 	
 	with "#call" do
+		it "rejects unsupported methods and endpoints without contacting Codex" do
+			request = Protocol::HTTP::Request["GET", "/v1/models"]
+			response = provider.call(request)
+			
+			expect(response.status).to be == 404
+			expect(client.requests).to be(:empty?)
+		ensure
+			response&.close
+		end
+		
+		it "rejects a non-object JSON payload" do
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/responses",
+				{"content-type" => "application/json"},
+				[JSON.dump(["not", "an", "object"])],
+			]
+			response = provider.call(request)
+			
+			expect(response.status).to be == 400
+			expect(JSON.parse(response.read).dig("error", "type")).to be == "invalid_request_error"
+		ensure
+			response&.close
+		end
+		
+		it "rejects Chat Completions requests that request multiple choices" do
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", n: 2, messages: [])],
+			]
+			response = provider.call(request)
+			
+			expect(response.status).to be == 400
+			expect(client.requests).to be(:empty?)
+		ensure
+			response&.close
+		end
+		
+		it "refreshes credentials and retries an unauthorized upstream request" do
+			authentication = Class.new do
+				attr :refresh_requests
+				
+				def initialize
+					@refresh_requests = []
+				end
+				
+				def credentials(refresh: false)
+					@refresh_requests << refresh
+					{access_token: refresh ? "new-token" : "old-token"}
+				end
+			end.new
+			responses = [Protocol::HTTP::Response[401], upstream_response]
+			client = Class.new do
+				attr :requests
+				
+				def initialize(responses)
+					@responses = responses
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					@responses.shift
+				end
+			end.new(responses)
+			provider = subject.new(authentication: authentication, client: client)
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", messages: [{role: "user", content: "Hello"}])],
+			]
+			
+			response = provider.call(request)
+			
+			expect(response.status).to be == 200
+			expect(authentication.refresh_requests).to be == [false, true]
+			expect(client.requests.length).to be == 2
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "maps authentication and unexpected failures to server errors" do
+			failing_authentication = Class.new do
+				def credentials(refresh: false)
+					raise Laiya::Provider::Codex::Authentication::Error
+				end
+			end.new
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", messages: [])],
+			]
+			response = subject.new(authentication: failing_authentication, client: client).call(request)
+			
+			expect(response.status).to be == 502
+			response.close
+			
+			failing_client = Class.new do
+				def call(_request)
+					raise IOError, "connection failed"
+				end
+			end.new
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", messages: [])],
+			]
+			response = subject.new(authentication: auth, client: failing_client).call(request)
+			
+			expect(response.status).to be == 502
+		ensure
+			response&.close
+		end
+		
+		it "forwards credential residency metadata" do
+			residency_authentication = Class.new do
+				def credentials(refresh: false)
+					{access_token: "test-token", account_id: "test-account", residency: "eu"}
+				end
+			end.new
+			provider = subject.new(authentication: residency_authentication, client: client)
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", messages: [])],
+			]
+			
+			response = provider.call(request)
+			expect(Array(client.requests.first[:request].headers["x-openai-internal-codex-residency"]).first).to be == "eu"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
 		with "an upstream error response" do
 			let(:upstream_response) do
 				Protocol::HTTP::Response[
@@ -208,6 +350,182 @@ describe Laiya::Provider::Codex do
 			expect(chunks.any?{|chunk| JSON.parse(chunk).dig("choices", 0, "delta", "content") == "Hello"}).to be_truthy
 		ensure
 			response&.close
+		end
+		
+		it "streams function calls and optional usage for the client" do
+			events = [
+				{type: "response.created", response: {id: "resp_tools", model: "gpt-test"}},
+				{type: "response.output_item.added", output_index: 0, item: {id: "item_1", call_id: "call_1", type: "function_call", name: "weather"}},
+				{type: "response.function_call_arguments.delta", output_index: 0, item_id: "item_1", delta: "{\"city\":\"Paris\"}"},
+				{type: "response.completed", response: {id: "resp_tools", model: "gpt-test", output: [{type: "function_call", call_id: "call_1"}], usage: {input_tokens: 5, output_tokens: 2}}},
+			]
+			body = events.map{|event| "data: #{JSON.dump(event)}\n\n"}.join
+			upstream = Protocol::HTTP::Response[200, {"content-type" => "text/event-stream"}, [body]]
+			client_with_tool_response = Class.new do
+				def initialize(response)
+					@response = response
+				end
+				
+				def call(_request)
+					@response
+				end
+			end.new(upstream)
+			provider = subject.new(authentication: auth, client: client_with_tool_response)
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", stream: true, stream_options: {include_usage: true}, messages: [{role: "user", content: "Check the weather."}])],
+			]
+			
+			response = provider.call(request)
+			chunks = response.read.lines.grep(/^data: /).map{|line| line.delete_prefix("data: ").strip}.reject{|line| line == "[DONE]"}.map{|line| JSON.parse(line)}
+			tool_chunk = chunks.find{|chunk| chunk.dig("choices", 0, "delta", "tool_calls")}
+			usage_chunk = chunks.find{|chunk| chunk["usage"]}
+			
+			expect(tool_chunk.dig("choices", 0, "delta", "tool_calls", 0, "function", "name")).to be == "weather"
+			expect(tool_chunk.dig("choices", 0, "delta", "tool_calls", 0, "function", "arguments")).to be == ""
+			expect(usage_chunk.dig("usage", "total_tokens")).to be == 7
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "streams refusal events and incomplete-response errors" do
+			refusal_events = [
+				{type: "response.created", response: {id: "resp_refusal", model: "gpt-test"}},
+				{type: "response.refusal.delta", delta: "I cannot help with that."},
+				{type: "response.completed", response: {id: "resp_refusal", model: "gpt-test", output: []}},
+			]
+			refusal_body = refusal_events.map{|event| "data: #{JSON.dump(event)}\n\n"}.join
+			upstream = Protocol::HTTP::Response[200, {"content-type" => "text/event-stream"}, [refusal_body]]
+			refusal_client = Class.new do
+				def initialize(response)
+					@response = response
+				end
+				
+				def call(_request)
+					@response
+				end
+			end.new(upstream)
+			provider = subject.new(authentication: auth, client: refusal_client)
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", stream: true, messages: [])],
+			]
+			response = provider.call(request)
+			chunks = response.read.lines.grep(/^data: /).map{|line| line.delete_prefix("data: ").strip}.reject{|line| line == "[DONE]"}.map{|line| JSON.parse(line)}
+			refusal = chunks.find{|chunk| chunk.dig("choices", 0, "delta", "refusal")}
+			expect(refusal.dig("choices", 0, "delta", "refusal")).to be == "I cannot help with that."
+			response.close
+			provider.close
+			
+			failed_events = [{type: "response.failed", response: {error: {message: "Codex failed"}}}]
+			failed_body = failed_events.map{|event| "data: #{JSON.dump(event)}\n\n"}.join
+			failed_response = Protocol::HTTP::Response[200, {"content-type" => "text/event-stream"}, [failed_body]]
+			failed_client = Class.new do
+				def initialize(response)
+					@response = response
+				end
+				
+				def call(_request)
+					@response
+				end
+			end.new(failed_response)
+			provider = subject.new(authentication: auth, client: failed_client)
+			failed_request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				[JSON.dump(model: "gpt-test", stream: true, messages: [])],
+			]
+			response = provider.call(failed_request)
+			body = response.read
+			
+			expect(body).to be(:include?, "Codex failed")
+			expect(body).to be(:include?, "Codex ended without a completed response")
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "returns errors for failed and incomplete non-streaming Responses" do
+			[
+				[{type: "error", error: {message: "Codex failed"}}],
+				[{type: "response.created", response: {id: "resp_open"}}],
+			].each do |events|
+				body = events.map{|event| "data: #{JSON.dump(event)}\n\n"}.join
+				upstream = Protocol::HTTP::Response[200, {"content-type" => "text/event-stream"}, [body]]
+				client = Class.new do
+					def initialize(response)
+						@response = response
+					end
+					
+					def call(_request)
+						@response
+					end
+				end.new(upstream)
+				provider = subject.new(authentication: auth, client: client)
+				request = Protocol::HTTP::Request[
+					"POST",
+					"/v1/responses",
+					{"content-type" => "application/json"},
+					[JSON.dump(model: "gpt-test", input: "Hello")],
+				]
+				response = provider.call(request)
+				
+				expect(response.status).to be == 502
+				response.close
+				provider.close
+			end
+		end
+		
+		it "returns errors for failed and incomplete Chat Completions" do
+			[
+				[{type: "response.failed", response: {error: {message: "Codex failed"}}}],
+				[{type: "response.created", response: {id: "resp_open"}}],
+			].each do |events|
+				body = events.map{|event| "data: #{JSON.dump(event)}\n\n"}.join
+				upstream = Protocol::HTTP::Response[200, {"content-type" => "text/event-stream"}, [body]]
+				client = Class.new do
+					def initialize(response)
+						@response = response
+					end
+					
+					def call(_request)
+						@response
+					end
+				end.new(upstream)
+				provider = subject.new(authentication: auth, client: client)
+				request = Protocol::HTTP::Request[
+					"POST",
+					"/v1/chat/completions",
+					{"content-type" => "application/json"},
+					[JSON.dump(model: "gpt-test", messages: [])],
+				]
+				response = provider.call(request)
+				
+				expect(response.status).to be == 502
+				response.close
+				provider.close
+			end
+		end
+		
+		it "closes an authentication source that supports closing" do
+			authentication = Class.new do
+				attr :closed
+				
+				def close
+					@closed = true
+				end
+			end.new
+			provider = subject.new(authentication: authentication, client: client)
+			
+			provider.close
+			
+			expect(authentication.closed).to be == true
 		end
 	end
 end

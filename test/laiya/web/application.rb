@@ -67,5 +67,9 @@ describe Laiya::Web::Application do
 			expect(response.status).to be == 502
 			expect(JSON.parse(response.read).dig("error", "type")).to be == "server_error"
 		end
+		
+		it "closes providers through the web application" do
+			application.close
+		end
 	end
 end

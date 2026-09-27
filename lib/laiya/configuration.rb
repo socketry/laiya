@@ -10,6 +10,10 @@ require_relative "configuration/builder"
 module Laiya
 	# Mutable provider and model routing configuration.
 	class Configuration
+		# Build a mutable configuration by evaluating a builder block.
+		# @yields {|builder| ...} The builder used to configure the new object.
+		# @parameter builder [Laiya::Configuration::Builder] The configuration DSL.
+		# @returns [Laiya::Configuration] The configured, mutable object.
 		def self.build(&block)
 			configuration = self.new
 			builder = Builder.new(configuration)
@@ -25,6 +29,7 @@ module Laiya
 			return configuration
 		end
 		
+		# Initialize an empty provider and model catalog.
 		def initialize
 			@providers = {}
 			@model_routes = {}
@@ -42,6 +47,11 @@ module Laiya
 		attr :models
 		attr :default_provider
 		
+		# Register a provider and optionally a model source.
+		# @parameter name [String | Symbol] The provider's routing name.
+		# @parameter instance [Interface(:call)] The provider implementation.
+		# @option :models [Symbol | Interface(:each, :find) | Nil] The model source or `:discover`.
+		# @raises [ArgumentError] If the provider or model source is invalid.
 		def provider(name, instance, models: nil)
 			name = name.to_sym
 			raise ArgumentError, "Provider #{name.inspect} is already configured" if @providers.key?(name)
@@ -66,6 +76,12 @@ module Laiya
 			@providers[name] = instance
 		end
 		
+		# Route a model ID to a configured provider and attach optional metadata.
+		# @parameter name [String | Symbol] The model ID.
+		# @parameter provider [String | Symbol] The provider name.
+		# @option :display_name [String | Nil] A human-readable model name.
+		# @option :limits [Hash | Nil] Positive context, input, and output token limits.
+		# @raises [ArgumentError] If the provider, model ID, or limits are invalid.
 		def model(name, provider:, display_name: nil, limits: nil)
 			provider = provider.to_sym
 			unless @providers.key?(provider)
@@ -83,6 +99,9 @@ module Laiya
 			@model_metadata[name] = metadata.freeze unless metadata.empty?
 		end
 		
+		# Set the provider used when no explicit or discovered route matches.
+		# @parameter name [String | Symbol | Nil] The provider name, or `nil` to clear the default.
+		# @raises [ArgumentError] If the provider is not configured.
 		def default_provider=(name)
 			name = name&.to_sym
 			if name && !@providers.key?(name)
@@ -92,12 +111,17 @@ module Laiya
 			@default_provider = name
 		end
 		
+		# Find the provider instance that serves a model ID.
+		# @parameter model [String | Nil] The model ID to route.
+		# @returns [Interface(:call) | Nil] The matching provider, if any.
 		def provider_for_model(model)
 			if name = @models.provider_for(model, default_provider: @default_provider)
 				return @providers.fetch(name)
 			end
 		end
 		
+		# Freeze configuration-owned state and finalize this object.
+		# @returns [Laiya::Configuration] This frozen configuration.
 		def freeze
 			return self if frozen?
 			

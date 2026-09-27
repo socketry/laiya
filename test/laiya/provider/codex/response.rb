@@ -27,5 +27,19 @@ describe Laiya::Provider::Codex::Response do
 			expect(tool_call.dig(:function, :arguments)).to be == "{\"city\":\"Paris\"}"
 			expect(response.dig(:usage, :total_tokens)).to be == 15
 		end
+		
+		it "serializes structured arguments and generates an ID when Codex omits one" do
+			response = subject.completed(
+				{
+					"output" => [
+						{"type" => "function_call", "call_id" => "call_1", "name" => "weather", "arguments" => {"city" => "Paris"}},
+					],
+				},
+			)
+			
+			arguments = response.dig(:choices, 0, :message, :tool_calls, 0, :function, :arguments)
+			expect(JSON.parse(arguments)).to be == {"city" => "Paris"}
+			expect(response[:id]).to be =~ /\Achatcmpl-[0-9a-f]+\z/
+		end
 	end
 end

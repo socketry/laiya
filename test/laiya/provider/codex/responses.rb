@@ -44,5 +44,14 @@ describe Laiya::Provider::Codex::Responses do
 			expect(response.dig("output", 0, "call_id")).to be == "call_1"
 			expect(response.dig("output", 0, "arguments")).to be == "{\"city\":\"Paris\"}"
 		end
+		
+		it "replaces a partial streamed item with its final output item" do
+			collector = subject::Collector.new
+			collector.accept({"type" => "response.output_item.added", "output_index" => 0, "item" => {"type" => "message", "content" => []}})
+			collector.accept({"type" => "response.output_item.done", "output_index" => 0, "item" => {"type" => "message", "content" => [{"type" => "output_text", "text" => "Final"}]}})
+			
+			response = collector.complete({"output" => []})
+			expect(response.dig("output", 0, "content", 0, "text")).to be == "Final"
+		end
 	end
 end

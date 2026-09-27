@@ -13,6 +13,10 @@ module Laiya
 			module Response
 				module_function
 				
+				# Convert a completed Responses object to Chat Completions format.
+				# @parameter response [Hash] The completed Codex response.
+				# @option :requested_model [String | Nil] The model requested by the client.
+				# @returns [Hash] A Chat Completions response object.
 				def completed(response, requested_model: nil)
 					output = response.fetch("output", [])
 					content = []
@@ -52,6 +56,14 @@ module Laiya
 					return result
 				end
 				
+				# Build a Chat Completions streaming chunk.
+				# @parameter response_id [String | Nil] The Codex response ID.
+				# @parameter model [String | Nil] The response model name.
+				# @parameter created [Integer | Nil] The creation timestamp.
+				# @parameter delta [Hash] The incremental assistant message.
+				# @option :finish_reason [String | Nil] The terminal reason, if final.
+				# @option :usage [Hash | Nil] Token usage for the response.
+				# @returns [Hash] A Chat Completions chunk.
 				def stream_chunk(response_id:, model:, created:, delta:, finish_reason: nil, usage: nil)
 					chunk = {
 						id: completion_id(response_id),
@@ -64,6 +76,9 @@ module Laiya
 					return chunk
 				end
 				
+				# Convert Codex input and output token counts to OpenAI usage fields.
+				# @parameter value [Hash | Nil] Codex usage information.
+				# @returns [Hash | Nil] OpenAI-compatible usage details.
 				def usage(value)
 					return unless value.is_a?(Hash)
 					
@@ -79,12 +94,18 @@ module Laiya
 					}
 				end
 				
+				# Encode function arguments as a JSON string.
+				# @parameter arguments [String | Object | Nil] The function arguments.
+				# @returns [String] The serialized function arguments.
 				def json_arguments(arguments)
 					return arguments if arguments.is_a?(String)
 					
 					JSON.dump(arguments || {})
 				end
 				
+				# Produce an OpenAI-style completion ID.
+				# @parameter response_id [String | Nil] An optional Codex response ID.
+				# @returns [String] A `chatcmpl-` ID.
 				def completion_id(response_id)
 					return "chatcmpl-#{response_id}" if response_id
 					
