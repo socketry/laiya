@@ -5,58 +5,22 @@
 
 module Laiya
 	class Configuration
-		# Mutable DSL for constructing a runtime configuration.
+		# Mutable DSL for configuring a Laiya::Configuration.
 		class Builder
-			def initialize
-				@providers = {}
-				@models = {}
-				@default_provider = nil
+			def initialize(configuration)
+				@configuration = configuration
 			end
 			
-			def provider(name, instance)
-				name = name.to_sym
-				raise ArgumentError, "Provider #{name.inspect} is already configured" if @providers.key?(name)
-				
-				@providers[name] = instance
+			def provider(name, instance, models: nil)
+				@configuration.provider(name, instance, models: models)
 			end
 			
-			def model(name, provider:)
-				name = name.to_s
-				raise ArgumentError, "Model #{name.inspect} is already configured" if @models.key?(name)
-				
-				@models[name] = provider.to_sym
+			def model(name, provider:, display_name: nil, limits: nil)
+				@configuration.model(name, provider: provider, display_name: display_name, limits: limits)
 			end
 			
 			def default_provider(name)
-				@default_provider = name.to_sym
-			end
-			
-			def call
-				if @providers.empty?
-					raise ArgumentError, "At least one provider must be configured"
-				end
-				
-				@providers.each do |name, provider|
-					unless provider.respond_to?(:call)
-						raise ArgumentError, "Provider #{name.inspect} must respond to #call"
-					end
-				end
-				
-				if @default_provider && !@providers.key?(@default_provider)
-					raise ArgumentError, "Default provider #{@default_provider.inspect} is not configured"
-				end
-				
-				@models.each do |model, provider|
-					unless @providers.key?(provider)
-						raise ArgumentError, "Provider #{provider.inspect} for model #{model.inspect} is not configured"
-					end
-				end
-				
-				Configuration.new(
-					providers: @providers.dup,
-					models: @models.dup,
-					default_provider: @default_provider,
-				)
+				@configuration.default_provider = name
 			end
 		end
 	end

@@ -33,6 +33,11 @@ module Laiya
 			
 			attr :endpoint
 			
+			# Fetch the upstream OpenAI-compatible model list as a raw HTTP response.
+			def models
+				self.call(Protocol::HTTP::Request["GET", "/v1/models"])
+			end
+			
 			def call(request)
 				headers = forwarded_headers(request.headers)
 				headers["authorization"] = "Bearer #{@api_key}" if @api_key

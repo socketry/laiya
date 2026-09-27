@@ -25,11 +25,23 @@ describe Laiya::Web::Application do
 			expect(provider.requests.first).to be_equal(request)
 		end
 		
+		it "queries the default provider's model endpoint when no model routes are declared" do
+			configuration = Laiya::Configuration.build do |builder|
+				builder.provider :fake, provider
+				builder.default_provider :fake
+			end
+			application = subject.new(configuration: configuration)
+			request = Protocol::HTTP::Request["GET", "/v1/models"]
+			
+			expect(application.call(request)).to be_equal(provider.response)
+			expect(provider.requests.first.path).to be == "/v1/models"
+		end
+		
 		it "lists configured models using the OpenAI model list shape" do
 			request = Protocol::HTTP::Request["GET", "/v1/models"]
 			configuration = Laiya::Configuration.build do |builder|
 				builder.provider :fake, provider
-				builder.model "configured-model", provider: :fake
+				builder.model "configured-model", provider: :fake, display_name: "Configured Model", limits: {context: 4096, output: 512}
 			end
 			application = subject.new(configuration: configuration)
 			
@@ -38,6 +50,7 @@ describe Laiya::Web::Application do
 			
 			expect(response.status).to be == 200
 			expect(payload.dig("data", 0, "id")).to be == "configured-model"
+			expect(payload.dig("data", 0, "laiya", "limits", "context")).to be == 4096
 			expect(provider.requests).to be(:empty?)
 		end
 		

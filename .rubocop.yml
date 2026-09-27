@@ -4,8 +4,6 @@ plugins:
 
 AllCops:
   DisabledByDefault: true
-  Exclude:
-    - design.md
 
 # Socketry specific rules:
 

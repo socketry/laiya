@@ -10,7 +10,7 @@ require_relative "../web/application"
 module Laiya
 	module Service
 		# Runs the Laiya API application on Async::HTTP::Server.
-		class API < Async::Service::Managed::Service
+		class Application < Async::Service::Managed::Service
 			def start
 				super
 				
@@ -26,7 +26,7 @@ module Laiya
 			end
 			
 			def run(instance, evaluator)
-				@application = Laiya::Web::Application.new(configuration: evaluator.configuration)
+				@application = evaluator.application
 				server = Async::HTTP::Server.new(
 					@application,
 					@bound_endpoint,

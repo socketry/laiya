@@ -1,0 +1,26 @@
+# Automatically generated context index for Utopia::Project guides.
+# Do not edit then files in this directory directly, instead edit the guides and then run `bake utopia:project:agent:context:update`.
+---
+description: An OpenAI-compatible HTTP API and provider proxy
+metadata:
+  bug_tracker_uri: https://github.com/socketry/laiya/issues
+  changelog_uri: https://github.com/socketry/laiya/blob/main/releases.md
+  documentation_uri: https://socketry.github.io/laiya/
+  source_code_uri: https://github.com/socketry/laiya.git
+files:
+- path: getting-started.md
+  title: Getting Started
+  description: This guide explains how to install Laiya, configure a provider, and
+    make an OpenAI-compatible request.
+- path: providers-and-models.md
+  title: Providers and Models
+  description: This guide explains how to route model IDs to providers and when to
+    discover a provider's model catalog.
+- path: http-api.md
+  title: HTTP API
+  description: This guide explains how Laiya's OpenAI-compatible HTTP API handles
+    routing, proxying, and streaming.
+- path: chatgpt-codex.md
+  title: ChatGPT Codex Provider
+  description: This guide explains how to run the experimental Codex provider with
+    a ChatGPT login while keeping tool execution on the client.

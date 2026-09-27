@@ -5,7 +5,7 @@
 
 require "json"
 require "protocol/http/middleware"
-require_relative "../provider/router"
+require_relative "../router"
 
 module Laiya
 	module Web
@@ -13,14 +13,14 @@ module Laiya
 		class Application < Protocol::HTTP::Middleware
 			def initialize(configuration:)
 				@configuration = configuration
-				@router = Provider::Router.new(configuration)
+				@router = Laiya::Router.new(configuration)
 			end
 			
 			attr :configuration
 			
 			def call(request)
-				if request.method == "GET" && request.path == "/v1/models" && !@configuration.models.empty?
-					return models_response
+				if request.method == "GET" && request.path == "/v1/models" && (response = @router.models_response)
+					return response
 				end
 				
 				return @router.call(request)
@@ -36,19 +36,6 @@ module Laiya
 				@router.close
 			end
 			
-			private
-			
-			def models_response
-				models = @configuration.models.map do |name, provider|
-					{ id: name, object: "model", created: 0, owned_by: provider.to_s }
-				end
-				
-				Protocol::HTTP::Response[
-					200,
-					{"content-type" => "application/json"},
-					[JSON.dump(object: "list", data: models)],
-				]
-			end
 		end
 	end
 end

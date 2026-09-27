@@ -8,23 +8,29 @@ source "https://rubygems.org"
 gemspec
 
 group :maintenance, optional: true do
-	gem "agent-context"
-	gem "bake-gem"
 	gem "bake-modernize"
+	gem "bake-gem"
 	gem "bake-releases"
+	
+	gem "socketry"
+	gem "agent-context"
+	
 	gem "decode"
+	
 	gem "utopia-project"
 end
 
 group :test do
 	gem "sus"
 	gem "covered"
+	
 	gem "rubocop"
+	gem "rubocop-md"
 	gem "rubocop-socketry"
+	
 	gem "sus-fixtures-async"
 	gem "sus-fixtures-async-http"
 	gem "bake"
 	gem "bake-test"
+	gem "bake-test-integration"
 end
-
-gem "rubocop-md", "~> 2.0", group: :test

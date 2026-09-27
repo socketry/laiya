@@ -1,0 +1,86 @@
+# frozen_string_literal: true
+
+# Released under the MIT License.
+# Copyright, 2026, by Samuel Williams.
+
+require "json"
+require "tmpdir"
+require "sus/fixtures/async/reactor_context"
+require "laiya/provider/codex"
+
+describe Laiya::Provider::Codex::Authentication do
+	include Sus::Fixtures::Async::ReactorContext
+	
+	def before
+		super
+		
+		@codex_home = Dir.mktmpdir("laiya-codex-auth-")
+		File.write(
+			File.join(@codex_home, "auth.json"),
+			JSON.dump(
+				auth_mode: "chatgpt",
+				tokens: {
+					access_token: "not-a-real-token",
+					refresh_token: "not-a-real-refresh-token",
+					account_id: "account-for-test",
+					id_token: {chatgpt_account_id: "account-for-test"},
+				},
+				last_refresh: Time.now.utc.iso8601,
+			),
+		)
+		@authentication = subject.new(codex_home: @codex_home)
+	end
+	
+	def after(error = nil)
+		@authentication&.close
+		FileUtils.remove_entry(@codex_home) if @codex_home && File.exist?(@codex_home)
+		
+		super
+	end
+	
+	it "loads the ChatGPT account credentials without exposing their values" do
+		credentials = @authentication.credentials
+		
+		expect(credentials[:access_token]).to be == "not-a-real-token"
+		expect(credentials[:account_id]).to be == "account-for-test"
+	end
+	
+	it "rejects API-key auth files" do
+		File.write(File.join(@codex_home, "auth.json"), JSON.dump(auth_mode: "apikey"))
+		
+		expect{@authentication.credentials}.to raise_exception(Laiya::Provider::Codex::Authentication::Error)
+	end
+	
+	it "refreshes stale tokens and persists the rotated credentials" do
+		File.write(
+			File.join(@codex_home, "auth.json"),
+			JSON.dump(
+				auth_mode: "chatgpt",
+				tokens: {access_token: "old-access", refresh_token: "old-refresh", account_id: "account-for-test"},
+				last_refresh: (Time.now - 8 * 24 * 60 * 60).utc.iso8601,
+			),
+		)
+		client = Class.new do
+			attr :requests
+			
+			def initialize
+				@requests = []
+			end
+			
+			def call(request)
+				@requests << {path: request.path, body: request.read}
+				Protocol::HTTP::Response[200, {}, [JSON.dump(access_token: "new-access", refresh_token: "new-refresh")]]
+			end
+		end.new
+		authentication = subject.new(codex_home: @codex_home, client: client)
+		
+		credentials = authentication.credentials
+		stored = JSON.parse(File.read(File.join(@codex_home, "auth.json")))
+		
+		expect(credentials[:access_token]).to be == "new-access"
+		expect(stored.dig("tokens", "refresh_token")).to be == "new-refresh"
+		expect(client.requests.first[:path]).to be == "/oauth/token"
+	ensure
+		authentication&.close
+	end
+end

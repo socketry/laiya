@@ -1,0 +1,37 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ollama serve &
+        server_pid=$$!
+        until ollama list >/dev/null 2>&1; do sleep 1; done
+        ollama pull "$$OLLAMA_MODEL"
+        wait "$$server_pid"
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-/tmp/laiya-integration-ollama}:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list | grep -Fq \"$$OLLAMA_MODEL\""]
+      interval: 5s
+      timeout: 5s
+      retries: 120
+      start_period: 10s
+
+  tests:
+    image: ruby:${RUBY_VERSION:-3.4}
+    working_dir: /code
+    volumes:
+      - ../..:/code
+    environment:
+      OLLAMA_ENDPOINT: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
+      COVERAGE: ${COVERAGE:-}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: ["sh", "-c", "bundle install && bundle exec sus integration/ollama/test.rb"]

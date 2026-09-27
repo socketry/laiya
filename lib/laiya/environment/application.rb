@@ -7,7 +7,7 @@ require "async/http"
 require "async/service/managed/environment"
 require_relative "../configuration"
 require_relative "../provider/openai"
-require_relative "../service/api"
+require_relative "../service/application"
 
 module Laiya
 	module Environment
@@ -16,7 +16,7 @@ module Laiya
 			include Async::Service::Managed::Environment
 			
 			def service_class
-				Laiya::Service::API
+				Laiya::Service::Application
 			end
 			
 			def endpoint
@@ -32,6 +32,10 @@ module Laiya
 					builder.provider :openai, Laiya::Provider::OpenAI.new
 					builder.default_provider :openai
 				end
+			end
+			
+			def application
+				Laiya::Web::Application.new(configuration: self.configuration)
 			end
 		end
 	end

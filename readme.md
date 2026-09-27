@@ -1,49 +1,62 @@
 # Laiya
 
-Laiya is an OpenAI-compatible HTTP API and provider proxy built on `Async::HTTP`.
-The initial release supports multiple configured models/providers and forwards
-OpenAI-compatible requests using `Protocol::HTTP::Request` and
-`Protocol::HTTP::Response`.
+The AI layer for Ruby.
 
 [![Development Status](https://github.com/socketry/laiya/workflows/Test/badge.svg)](https://github.com/socketry/laiya/actions?workflow=Test)
 
-## Configuration
+Laiya is a play on “Layer AI”: an OpenAI-compatible HTTP API and provider proxy
+built on `Async::HTTP`.
 
-``` ruby
-require "laiya"
+## Motivation
 
-configuration = Laiya::Configuration.build do |builder|
-	builder.provider :openai, Laiya::Provider::OpenAI.new(api_key: ENV.fetch("OPENAI_API_KEY"))
-	builder.model "gpt-4.1-mini", provider: :openai
-	builder.default_provider :openai
-end
+LLM providers expose overlapping APIs but differ in authentication, model
+catalogs, and protocol details. Laiya provides a shared OpenAI-compatible HTTP
+surface and routes requests to configured providers, while allowing compatible
+providers to proxy request and response bodies without buffering them.
 
-application = Laiya::Web::Application.new(configuration: configuration)
-```
+## Usage
 
-The router inspects the `model` field for known JSON request endpoints. It
-buffers and rewinds the request body before forwarding it. The OpenAI provider
-does not parse or transform request or response bodies, so streamed responses
-remain streamed.
+Please see the [project documentation](https://socketry.github.io/laiya/) for more details.
 
-## Running the API
+  - [Getting Started](https://socketry.github.io/laiya/guides/getting-started/index) - This guide explains how to install Laiya, configure a provider, and make an OpenAI-compatible request.
 
-Set `OPENAI_API_KEY` and run:
+  - [Providers and Models](https://socketry.github.io/laiya/guides/providers-and-models/index) - This guide explains how to route model IDs to providers and when to discover a provider's model catalog.
+
+  - [HTTP API](https://socketry.github.io/laiya/guides/http-api/index) - This guide explains how Laiya's OpenAI-compatible HTTP API handles routing, proxying, and streaming.
+
+  - [ChatGPT Codex Provider](https://socketry.github.io/laiya/guides/chatgpt-codex/index) - This guide explains how to run the experimental Codex provider with a ChatGPT login while keeping tool execution on the client.
+
+## Releases
+
+Please see the [project releases](https://socketry.github.io/laiya/releases/index) for all releases.
+
+### Unreleased
+
+## Contributing
+
+We welcome contributions to Laiya.
+
+### Running tests
 
 ``` sh
-bundle exec bin/laiya
-```
-
-The default service listens at `http://localhost:9292`. Set `LAIYA_URL` to
-change the bind endpoint.
-
-## Development
-
-``` sh
-bundle exec bake agent:context:install
 bundle exec bake test
-bundle exec bake modernize
 ```
 
-Tests use Sus and local fake providers; they do not require an OpenAI account or
-network access.
+### Running integration tests
+
+The Ollama integration test requires Docker Compose and downloads a small CPU
+model on its first run:
+
+``` sh
+bundle exec bake test:integration name=ollama
+```
+
+### Making releases
+
+``` sh
+bundle exec bake gem:release:patch
+```
+
+### Developer Certificate of Origin
+
+Contributions must comply with the [Developer Certificate of Origin](https://developercertificate.org/).

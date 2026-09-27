@@ -6,7 +6,7 @@
 require "laiya"
 require "laiya/provider/fake"
 
-describe Laiya::Provider::Router do
+describe Laiya::Router do
 	let(:response) {Protocol::HTTP::Response[201, {"x-upstream" => "true"}, ["response"]]}
 	let(:openai) {Laiya::Provider::Fake.new(response)}
 	let(:alternate) {Laiya::Provider::Fake.new}
@@ -61,6 +61,37 @@ describe Laiya::Provider::Router do
 			
 			expect(result.status).to be == 404
 			expect(JSON.parse(result.read).dig("error", "type")).to be == "not_found_error"
+		end
+	end
+	
+	with "upstream model discovery" do
+		it "lists and routes discovered models without registering them individually" do
+			models_response = Protocol::HTTP::Response[
+				200,
+				{"content-type" => "application/json"},
+				[JSON.dump(object: "list", data: [{id: "llama3.2", object: "model", created: 12, owned_by: "library"}])],
+			]
+			ollama = Laiya::Provider::Fake.new(response, models_response: models_response)
+			configuration = Laiya::Configuration.build do |builder|
+				builder.provider :ollama, ollama, models: :discover
+			end
+			router = subject.new(configuration)
+			
+			listed = router.models_response
+			payload = JSON.parse(listed.read)
+			request = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				['{"model":"llama3.2","messages":[]}'],
+			]
+			forwarded_response = router.call(request)
+			
+			expect(payload.dig("data", 0, "id")).to be == "llama3.2"
+			expect(payload.dig("data", 0, "owned_by")).to be == "ollama"
+			expect(forwarded_response).to be_equal(response)
+			expect(ollama.model_requests).to be == 1
+			expect(ollama.requests.length).to be == 1
 		end
 	end
 end
