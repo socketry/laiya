@@ -12,6 +12,11 @@ module Laiya
 			module ServerSentEvents
 				module_function
 				
+				# Decode an HTTP body as server-sent events.
+				# @parameter body [Enumerable(String)] The streamed event body.
+				# @yields {|event| ...} Each decoded event.
+				#  @parameter event [Hash] The event data.
+				# @returns [Enumerator | Nil] An enumerator without a block, otherwise `nil`.
 				def each(body, &block)
 					return enum_for(__method__, body) unless block
 					
@@ -45,12 +50,20 @@ module Laiya
 					yield_event(event_name, data, &block) unless data.empty?
 				end
 				
+				# Collect all decoded events from a body.
+				# @parameter body [Enumerable(String)] The event body.
+				# @returns [Array(Hash)] The decoded events.
 				def parse(body)
 					events = []
 					each(body) {|event| events << event}
 					return events
 				end
 				
+				# Parse event data and yield a non-terminal event.
+				# @parameter event_name [String | Nil] The optional event name.
+				# @parameter data [Array(String)] The event data lines.
+				# @yields {|event| ...} The parsed event object.
+				# @parameter event [Hash] The decoded JSON data.
 				def yield_event(event_name, data)
 					joined = data.join("\n")
 					return if joined == "[DONE]"

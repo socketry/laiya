@@ -47,6 +47,18 @@ describe Laiya::Router do
 			expect(router.call(request)).to be_equal(response)
 			expect(openai.requests).to have_attributes(length: be == 1)
 		end
+		
+		it "uses the default provider when the model request body is malformed" do
+			body = Protocol::HTTP::Request[
+				"POST",
+				"/v1/chat/completions",
+				{"content-type" => "application/json"},
+				["not json"],
+			]
+			
+			expect(router.call(body)).to be_equal(response)
+			expect(openai.requests.first.read).to be == "not json"
+		end
 	end
 	
 	with "missing default provider" do
@@ -76,6 +88,7 @@ describe Laiya::Router do
 				builder.provider :ollama, ollama, models: :discover
 			end
 			router = subject.new(configuration)
+			expect(configuration.models.discover?).to be == true
 			
 			listed = router.models_response
 			payload = JSON.parse(listed.read)
@@ -92,6 +105,33 @@ describe Laiya::Router do
 			expect(forwarded_response).to be_equal(response)
 			expect(ollama.model_requests).to be == 1
 			expect(ollama.requests.length).to be == 1
+		end
+	end
+	
+	with "closing providers" do
+		it "closes unique providers that support closing" do
+			provider = Class.new do
+				attr :close_count
+				
+				def initialize
+					@close_count = 0
+				end
+				
+				def call(_request)
+				end
+				
+				def close
+					@close_count += 1
+				end
+			end.new
+			configuration = Laiya::Configuration.build do |builder|
+				builder.provider :first, provider
+				builder.provider :second, provider
+			end
+			
+			subject.new(configuration).close
+			
+			expect(provider.close_count).to be == 1
 		end
 	end
 end

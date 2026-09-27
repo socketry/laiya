@@ -11,6 +11,9 @@ module Laiya
 		class Ollama < OpenAI
 			DEFAULT_ENDPOINT = "http://localhost:11434"
 			
+			# Initialize a provider with Ollama's local endpoint and API-key default.
+			# @option :endpoint [String | Async::HTTP::Endpoint] The Ollama HTTP endpoint.
+			# @option :api_key [String | Nil] The optional bearer token.
 			def initialize(endpoint: DEFAULT_ENDPOINT, api_key: "ollama", **options)
 				super(endpoint: endpoint, api_key: api_key, **options)
 			end

@@ -16,10 +16,15 @@ module Laiya
 			/v1/images/generations
 		].freeze
 		
+		# Initialize a router for the given configuration.
+		# @parameter configuration [Laiya::Configuration] The provider and model routes.
 		def initialize(configuration)
 			@configuration = configuration
 		end
 		
+		# Route an HTTP request to its configured provider.
+		# @parameter request [Protocol::HTTP::Request] The incoming request.
+		# @returns [Protocol::HTTP::Response] The provider response or a routing error.
 		def call(request)
 			provider = provider_for_model(model_for(request))
 			
@@ -46,6 +51,7 @@ module Laiya
 			]
 		end
 		
+		# Close configured providers that support closing.
 		def close
 			@configuration.providers.values.uniq.each do |provider|
 				provider.close if provider.respond_to?(:close)

@@ -26,6 +26,11 @@ module Laiya
 			DEFAULT_ENDPOINT = "https://chatgpt.com/backend-api/codex"
 			USER_AGENT = "laiya-codex/0.0.0"
 			
+			# Initialize the experimental ChatGPT Codex API adapter.
+			# @option :authentication [Interface(:credentials) | Nil] A credential source.
+			# @option :codex_home [String] The Codex home directory containing `auth.json`.
+			# @option :endpoint [String | Async::HTTP::Endpoint] The Codex backend endpoint.
+			# @option :client [Interface(:call) | Nil] An optional HTTP client.
 			def initialize(authentication: nil, codex_home: ENV.fetch("CODEX_HOME", Authentication::DEFAULT_CODEX_HOME), endpoint: DEFAULT_ENDPOINT, client: nil, **client_options)
 				@endpoint = Async::HTTP::Endpoint[endpoint]
 				@authentication = authentication || Authentication.new(codex_home: codex_home)
@@ -35,6 +40,9 @@ module Laiya
 			
 			attr :endpoint
 			
+			# Convert supported Chat Completions requests or proxy Responses requests.
+			# @parameter request [Protocol::HTTP::Request] The incoming OpenAI-compatible request.
+			# @returns [Protocol::HTTP::Response] The translated or proxied response.
 			def call(request)
 				path = request.path.split("?", 2).first
 				unless request.method == "POST" && %w[/v1/chat/completions /v1/responses].include?(path)
@@ -91,6 +99,7 @@ module Laiya
 				error_response(502, "Codex provider request failed", "server_error")
 			end
 			
+			# Close the HTTP client and authentication source when owned.
 			def close
 				@client.close if @owns_client
 				@authentication.close if @authentication.respond_to?(:close)

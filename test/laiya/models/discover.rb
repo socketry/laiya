@@ -45,4 +45,31 @@ describe Laiya::Models::Discover do
 			expect(custom_source.all.first["context_length"]).to be == 32768
 		end
 	end
+	
+	with "an invalid provider catalog" do
+		it "raises an error for failed HTTP responses" do
+			provider = Laiya::Provider::Fake.new(
+				Protocol::HTTP::Response[200],
+				models_response: Protocol::HTTP::Response[503, {}, ["unavailable"]],
+			)
+			models = subject.new(provider)
+			
+			expect{models.all}.to raise_exception(subject::Error)
+		end
+		
+		it "raises an error for malformed or invalid model lists" do
+			[
+				"not json",
+				JSON.dump(error: "missing data"),
+				JSON.dump(data: {id: "not-an-array"}),
+			].each do |body|
+				provider = Laiya::Provider::Fake.new(
+					Protocol::HTTP::Response[200],
+					models_response: Protocol::HTTP::Response[200, {}, [body]],
+				)
+				
+				expect{subject.new(provider).all}.to raise_exception(subject::Error)
+			end
+		end
+	end
 end

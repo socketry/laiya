@@ -23,9 +23,14 @@ module Laiya
 				REFRESH_AFTER = 7 * 24 * 60 * 60
 				EXPIRY_SAFETY_MARGIN = 5 * 60
 				
+				# Raised when Codex credentials are missing, invalid, or cannot be refreshed.
 				class Error < StandardError
 				end
 				
+				# Initialize credential loading for a Codex home directory.
+				# @option :codex_home [String] The directory containing `auth.json`.
+				# @option :client [Interface(:call) | Nil] An optional OAuth HTTP client.
+				# @option :endpoint [String | Async::HTTP::Endpoint] The OAuth issuer endpoint.
 				def initialize(codex_home: ENV.fetch("CODEX_HOME", DEFAULT_CODEX_HOME), client: nil, endpoint: ISSUER)
 					@codex_home = codex_home
 					@auth_path = File.join(codex_home, "auth.json")
@@ -35,6 +40,10 @@ module Laiya
 					@semaphore = Async::Semaphore.new(1)
 				end
 				
+				# Load valid credentials and refresh them when requested or stale.
+				# @option :refresh [Boolean] Force a credential refresh.
+				# @returns [Hash] The access token, account ID, and optional residency.
+				# @raises [Laiya::Provider::Codex::Authentication::Error] If the credentials cannot be used.
 				def credentials(refresh: false)
 					@semaphore.acquire do
 						with_auth_lock do
@@ -59,6 +68,7 @@ module Laiya
 					end
 				end
 				
+				# Close the OAuth client when this object created it.
 				def close
 					@client.close if @owns_client
 				end

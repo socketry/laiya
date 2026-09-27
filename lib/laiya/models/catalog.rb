@@ -7,6 +7,10 @@ module Laiya
 	module Models
 		# Read-only view of configured and provider-backed model catalogs.
 		class Catalog
+			# Build a catalog view over configuration-owned model data.
+			# @parameter routes [Hash(String, Symbol)] Explicit model routes.
+			# @parameter sources [Hash(Symbol, Interface(:each, :find))] Provider discovery sources.
+			# @parameter metadata [Hash(String, Hash)] Metadata for explicit model routes.
 			def initialize(routes:, sources:, metadata:)
 				@routes = routes
 				@sources = sources
@@ -17,14 +21,22 @@ module Laiya
 			attr :sources
 			attr :metadata
 			
+			# Check whether the catalog contains routes or discovery sources.
+			# @returns [Boolean] `true` when the catalog is empty.
 			def empty?
 				@routes.empty? && @sources.empty?
 			end
 			
+			# Check whether the catalog has any provider discovery sources.
+			# @returns [Boolean] `true` when discovery is configured.
 			def discover?
 				!@sources.empty?
 			end
 			
+			# Resolve the provider name for a model, using the default as fallback.
+			# @parameter model [String | Nil] The model ID to look up.
+			# @option :default_provider [Symbol | Nil] The fallback provider name.
+			# @returns [Symbol | Nil] The selected provider name.
 			def provider_for(model, default_provider: nil)
 				return @routes[model] if @routes.key?(model)
 				
@@ -40,6 +52,11 @@ module Laiya
 				return default_provider
 			end
 			
+			# Enumerate explicit and discovered models without duplicate IDs.
+			# @option :default_provider [Symbol | Nil] The preferred owner of duplicate IDs.
+			# @yields {|model| ...} Each model entry in OpenAI model-list format.
+			#  @parameter model [Hash] A model-list entry.
+			# @returns [Enumerator | Nil] An enumerator without a block, otherwise `nil`.
 			def each(default_provider: nil, &block)
 				return to_enum(__method__, default_provider: default_provider) unless block
 				
@@ -75,6 +92,8 @@ module Laiya
 				models.each_value(&block)
 			end
 			
+			# Freeze the catalog and its shared configuration data.
+			# @returns [Laiya::Models::Catalog] This frozen catalog.
 			def freeze
 				return self if frozen?
 				

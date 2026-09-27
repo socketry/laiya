@@ -10,6 +10,10 @@ module Laiya
 			module Responses
 				module_function
 				
+				# Apply stateless and streaming options to a native Responses payload.
+				# @parameter payload [Hash] The Responses request object.
+				# @returns [Hash] A copied request configured for the Codex backend.
+				# @raises [ArgumentError] If the request refers to stored prior state.
 				def prepare(payload)
 					if payload["previous_response_id"]
 						raise ArgumentError, "Codex stateless mode requires the client to send full input history"
@@ -29,10 +33,13 @@ module Laiya
 				# Rebuilds output items from streamed events when the terminal Codex
 				# response omits them (some Codex responses return an empty output array).
 				class Collector
+					# Initialize an empty streamed-output collector.
 					def initialize
 						@items = {}
 					end
 					
+					# Accumulate one Codex Responses streaming event.
+					# @parameter event [Hash] The event to record.
 					def accept(event)
 						case event["type"]
 						when "response.output_item.added"
@@ -46,6 +53,9 @@ module Laiya
 						end
 					end
 					
+					# Fill missing output items in a terminal response from collected events.
+					# @parameter response [Hash] The completed Responses object.
+					# @returns [Hash] The response with reconstructed output items.
 					def complete(response)
 						unless response["output"].is_a?(Array) && !response["output"].empty?
 							response["output"] = @items.sort_by{|index, _item| index}.map(&:last)

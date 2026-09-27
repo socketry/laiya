@@ -14,5 +14,6 @@ require_relative "laiya/provider/ollama"
 require_relative "laiya/router"
 require_relative "laiya/web/application"
 
+# @namespace
 module Laiya
 end

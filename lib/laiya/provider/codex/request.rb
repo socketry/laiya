@@ -12,6 +12,10 @@ module Laiya
 			module Request
 				module_function
 				
+				# Transform a Chat Completions payload into a Codex Responses request.
+				# @parameter payload [Hash] The Chat Completions request object.
+				# @returns [Hash] The Codex Responses request payload.
+				# @raises [ArgumentError, KeyError] If the request contains unsupported input.
 				def transform(payload)
 					messages = payload.fetch("messages")
 					raise ArgumentError, "messages must be an array" unless messages.is_a?(Array)
@@ -84,6 +88,10 @@ module Laiya
 					return result
 				end
 				
+				# Convert an OpenAI response format into Codex text formatting options.
+				# @parameter format [Hash | Nil] The requested response format.
+				# @returns [Hash | Nil] The corresponding Codex format, if provided.
+				# @raises [ArgumentError, KeyError] If the format is invalid or unsupported.
 				def transform_response_format(format)
 					return unless format
 					raise ArgumentError, "response_format must be an object" unless format.is_a?(Hash)
@@ -106,6 +114,10 @@ module Laiya
 					end
 				end
 				
+				# Extract text from supported message content shapes.
+				# @parameter content [String | Array | Nil] The message content.
+				# @returns [String] The concatenated text content.
+				# @raises [ArgumentError] If the content type is unsupported.
 				def text(content)
 					return "" if content.nil?
 					return content if content.is_a?(String)

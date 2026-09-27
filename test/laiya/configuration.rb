@@ -73,6 +73,54 @@ describe Laiya::Configuration do
 			end.to raise_exception(ArgumentError)
 		end
 		
+		it "rejects providers that do not implement the provider interface" do
+			expect do
+				subject.build do |builder|
+					builder.provider :invalid, Object.new
+				end
+			end.to raise_exception(ArgumentError)
+		end
+		
+		it "rejects invalid model sources and default providers" do
+			configuration = subject.build
+			
+			expect do
+				configuration.provider :openai, openai, models: Object.new
+			end.to raise_exception(ArgumentError)
+			expect do
+				configuration.default_provider = :missing
+			end.to raise_exception(ArgumentError)
+		end
+		
+		it "accepts a custom model catalog source" do
+			source = Class.new do
+				def each
+					yield({"id" => "custom-model"})
+				end
+				
+				def find(id)
+					{"id" => id} if id == "custom-model"
+				end
+			end.new
+			configuration = subject.build
+			configuration.provider :openai, openai, models: source
+			
+			expect(configuration.models.sources[:openai]).to be_equal(source)
+		end
+		
+		it "rejects invalid model limits before registering the route" do
+			configuration = subject.build
+			configuration.provider :openai, openai
+			
+			expect do
+				configuration.model "gpt-example", provider: :openai, limits: {context: -1}
+			end.to raise_exception(ArgumentError)
+			expect(configuration.models.routes).to be(:empty?)
+			expect do
+				configuration.model "gpt-example", provider: :openai, limits: []
+			end.to raise_exception(ArgumentError)
+		end
+		
 		it "freezes configuration-owned state explicitly" do
 			configuration = subject.build do |builder|
 				builder.provider :openai, openai
