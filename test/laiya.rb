@@ -7,8 +7,8 @@ require "laiya"
 
 describe Laiya do
 	with ".VERSION" do
-		it "starts at 0.0.0" do
-			expect(Laiya::VERSION).to be == "0.0.0"
+		it "uses a semantic version" do
+			expect(Laiya::VERSION).to be =~ /\A\d+\.\d+\.\d+\z/
 		end
 	end
 end
