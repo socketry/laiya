@@ -41,6 +41,7 @@ jobs:
         path: .covered.db
   
   validate:
+    name: Test coverage validation
     needs: test
     runs-on: ubuntu-latest
     

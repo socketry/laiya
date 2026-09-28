@@ -32,6 +32,9 @@ Please see the [project releases](https://socketry.github.io/laiya/releases/inde
 
 ### Unreleased
 
+  - Add an OpenAI-compatible HTTP API with OpenAI and Ollama providers, model discovery, and model limits.
+  - Add an experimental ChatGPT Codex provider and an Async::Service launcher.
+
 ## Contributing
 
 We welcome contributions to Laiya.
@@ -54,8 +57,10 @@ bundle exec bake test:integration name=ollama
 ### Making releases
 
 ``` sh
-bundle exec bake gem:release:patch
+bundle exec bake gem:github:release:patch
 ```
+
+See [bake-gem-github](https://github.com/socketry/bake-gem-github) for release setup and process.
 
 ### Developer Certificate of Origin
 
