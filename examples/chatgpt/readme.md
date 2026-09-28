@@ -93,7 +93,7 @@ committing it:
 		"laiya-codex": {
 			"name": "Laiya Codex",
 			"env": ["LAIYA_API_KEY"],
-			"package": "@opencode/ai/providers/openai-compatible/responses",
+			"package": "@opencode/ai/providers/openai/responses",
 			"settings": {
 				"baseURL": "https://laiya.example.com/v1",
 			},
