@@ -76,7 +76,21 @@ describe Laiya::Provider::Codex do
 		it "fetches visible API-supported models and normalizes their metadata" do
 			catalog = {
 				models: [
-					{slug: "gpt-visible", display_name: "GPT Visible", supported_in_api: true, visibility: "list", context_window: 272_000},
+					{
+						slug: "gpt-visible",
+						display_name: "GPT Visible",
+						supported_in_api: true,
+						visibility: "list",
+						context_window: 272_000,
+						default_reasoning_level: "low",
+						supported_reasoning_levels: [
+							{effort: "low", description: "Fast"},
+							{effort: "medium", description: "Balanced"},
+							{effort: "low", description: "Duplicate"},
+							{description: "Missing an effort"},
+						],
+					},
+					{slug: "gpt-no-reasoning", display_name: "GPT No Reasoning", supported_in_api: true, visibility: "list"},
 					{slug: "gpt-hidden", display_name: "GPT Hidden", supported_in_api: true, visibility: "hide"},
 					{slug: "gpt-unsupported", display_name: "GPT Unsupported", supported_in_api: false, visibility: "list"},
 					{slug: "", supported_in_api: true, visibility: "list"},
@@ -114,13 +128,26 @@ describe Laiya::Provider::Codex do
 			expect(Array(request.headers["chatgpt-account-id"]).first).to be == "test-account"
 			expect(Array(request.headers["originator"]).first).to be == "laiya"
 			expect(Array(request.headers["x-openai-internal-codex-residency"]).first).to be == "eu"
-			expect(models).to be == [{
-				"id" => "gpt-visible",
-				"object" => "model",
-				"created" => 0,
-				"owned_by" => "codex",
-				"laiya" => {"name" => "GPT Visible", "limits" => {"context" => 272_000}},
-			}]
+			expect(models).to be == [
+				{
+					"id" => "gpt-visible",
+					"object" => "model",
+					"created" => 0,
+					"owned_by" => "codex",
+					"laiya" => {
+						"name" => "GPT Visible",
+						"limits" => {"context" => 272_000},
+						"reasoning" => {"supported_efforts" => ["low", "medium"], "default_effort" => "low"},
+					},
+				},
+				{
+					"id" => "gpt-no-reasoning",
+					"object" => "model",
+					"created" => 0,
+					"owned_by" => "codex",
+					"laiya" => {"name" => "GPT No Reasoning"},
+				},
+			]
 		ensure
 			response&.close
 			provider&.close

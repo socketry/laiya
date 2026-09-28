@@ -214,6 +214,16 @@ module Laiya
 				if (context = model["context_window"]).is_a?(Integer) && context.positive?
 					metadata["limits"] = {"context" => context}
 				end
+				efforts = Array(model["supported_reasoning_levels"]).filter_map do |level|
+					level["effort"] if level.is_a?(Hash) && level["effort"].is_a?(String) && !level["effort"].empty?
+				end.uniq
+				if efforts.any?
+					reasoning = {"supported_efforts" => efforts}
+					if efforts.include?(default_effort = model["default_reasoning_level"])
+						reasoning["default_effort"] = default_effort
+					end
+					metadata["reasoning"] = reasoning
+				end
 				
 				{
 					"id" => id,

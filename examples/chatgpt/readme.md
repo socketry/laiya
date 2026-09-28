@@ -98,7 +98,16 @@ committing it:
 				"baseURL": "https://laiya.example.com/v1",
 			},
 			"models": {
-				"gpt-6-luna": {"name": "GPT-6 Luna"},
+				"gpt-6-luna": {
+					"name": "GPT-6 Luna",
+					"variants": [
+						{"id": "low", "settings": {"reasoningEffort": "low"}},
+						{"id": "medium", "settings": {"reasoningEffort": "medium"}},
+						{"id": "high", "settings": {"reasoningEffort": "high"}},
+						{"id": "xhigh", "settings": {"reasoningEffort": "xhigh"}},
+						{"id": "max", "settings": {"reasoningEffort": "max"}},
+					],
+				},
 			},
 		},
 	},
@@ -106,6 +115,9 @@ committing it:
 }
 ```
 
-The custom model list in OpenCode is configured explicitly. The model can return
-tool calls, which OpenCode executes on the client computer and reports back on
-subsequent requests; Laiya never executes client tools.
+Codex entries returned by `GET /v1/models` include the supported reasoning
+efforts in `laiya.reasoning.supported_efforts` and the default in
+`laiya.reasoning.default_effort`. Use those values to configure OpenCode's
+model variants; its custom-provider model list remains explicit. The model can
+return tool calls, which OpenCode executes on the client computer and reports
+back on subsequent requests; Laiya never executes client tools.
