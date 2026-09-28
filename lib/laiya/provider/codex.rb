@@ -28,6 +28,21 @@ module Laiya
 			DEFAULT_ENDPOINT = "https://chatgpt.com/backend-api/codex"
 			USER_AGENT = "laiya-codex/0.0.0"
 			
+			# Return the configured or installed Codex CLI version.
+			# @returns [String | Nil] The Codex CLI version, or `nil` when it cannot be detected.
+			def self.client_version
+				if version = ENV["CODEX_CLIENT_VERSION"]
+					return version unless version.empty?
+				end
+				
+				output, status = Open3.capture2("codex", "--version")
+				return unless status.success?
+				
+				return output[/\bcodex(?:-cli)?\s+(\S+)/, 1]
+			rescue Errno::ENOENT
+				nil
+			end
+			
 			# Initialize the experimental ChatGPT Codex API adapter.
 			# @option :authentication [Interface(:credentials) | Nil] A credential source.
 			# @option :codex_home [String] The Codex home directory containing `auth.json`.
@@ -144,12 +159,7 @@ module Laiya
 				return @client_version if @client_version_detected
 				
 				@client_version_detected = true
-				output, status = Open3.capture2("codex", "--version")
-				@client_version = output[/\bcodex(?:-cli)?\s+(\S+)/, 1] if status.success?
-				
-				return @client_version
-			rescue Errno::ENOENT
-				return nil
+				@client_version = self.class.client_version
 			end
 			
 			def request_models(credentials, client_version)

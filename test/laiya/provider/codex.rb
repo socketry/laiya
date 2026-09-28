@@ -60,6 +60,19 @@ describe Laiya::Provider::Codex do
 	let(:provider) {subject.new(authentication: auth, client: client)}
 	
 	with "#models" do
+		it "exposes the configured Codex client version" do
+			previous_version = ENV["CODEX_CLIENT_VERSION"]
+			ENV["CODEX_CLIENT_VERSION"] = "0.158.0"
+			
+			expect(subject.client_version).to be == "0.158.0"
+		ensure
+			if previous_version
+				ENV["CODEX_CLIENT_VERSION"] = previous_version
+			else
+				ENV.delete("CODEX_CLIENT_VERSION")
+			end
+		end
+		
 		it "fetches visible API-supported models and normalizes their metadata" do
 			catalog = {
 				models: [
