@@ -83,7 +83,12 @@ describe Laiya::Provider::Codex do
 					@response
 				end
 			end.new(upstream)
-			provider = subject.new(authentication: auth, client_version: "0.157.0", client: client)
+			authentication = Class.new do
+				def credentials(refresh: false)
+					{access_token: "test-token", account_id: "test-account", residency: "eu"}
+				end
+			end.new
+			provider = subject.new(authentication: authentication, client_version: "0.157.0", client: client)
 			
 			response = provider.models
 			models = JSON.parse(response.read).fetch("data")
@@ -95,6 +100,7 @@ describe Laiya::Provider::Codex do
 			expect(request.headers["authorization"]).to be == "Bearer test-token"
 			expect(Array(request.headers["chatgpt-account-id"]).first).to be == "test-account"
 			expect(Array(request.headers["originator"]).first).to be == "laiya"
+			expect(Array(request.headers["x-openai-internal-codex-residency"]).first).to be == "eu"
 			expect(models).to be == [{
 				"id" => "gpt-visible",
 				"object" => "model",
@@ -102,6 +108,56 @@ describe Laiya::Provider::Codex do
 				"owned_by" => "codex",
 				"laiya" => {"name" => "GPT Visible", "limits" => {"context" => 272_000}},
 			}]
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "preserves upstream model catalog errors" do
+			upstream = Protocol::HTTP::Response[503, {"content-type" => "application/json"}, ['{"error":"unavailable"}']]
+			client = Class.new do
+				def initialize(response)
+					@response = response
+				end
+				
+				def call(_request)
+					@response
+				end
+			end.new(upstream)
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			
+			expect(response.status).to be == 503
+			expect(response.read).to be == '{"error":"unavailable"}'
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "maps authentication and unexpected model discovery failures to server errors" do
+			failing_authentication = Class.new do
+				def credentials(refresh: false)
+					raise Laiya::Provider::Codex::Authentication::Error
+				end
+			end.new
+			provider = subject.new(authentication: failing_authentication, client_version: "0.157.0", client: client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			expect(JSON.parse(response.read).dig("error", "message")).to be == "Codex authentication failed"
+			response.close
+			
+			unexpected_authentication = Class.new do
+				def credentials(refresh: false)
+					raise IOError, "Connection failed"
+				end
+			end.new
+			provider = subject.new(authentication: unexpected_authentication, client_version: "0.157.0", client: client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			expect(JSON.parse(response.read).dig("error", "message")).to be == "Codex model discovery failed"
 		ensure
 			response&.close
 			provider&.close
@@ -165,6 +221,17 @@ describe Laiya::Provider::Codex do
 				end
 			end.new
 			provider = subject.new(authentication: auth, client_version: "0.157.0", client: invalid_client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			response.close
+			
+			malformed_client = Class.new do
+				def call(_request)
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, ["not json"]]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: malformed_client)
 			response = provider.models
 			
 			expect(response.status).to be == 502
