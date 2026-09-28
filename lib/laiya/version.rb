@@ -4,5 +4,5 @@
 # Copyright, 2026, by Samuel Williams.
 
 module Laiya
-	VERSION = "0.0.2"
+	VERSION = "0.0.3"
 end

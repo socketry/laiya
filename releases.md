@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v0.0.3
 
   - Enrich discovered Ollama models with thinking controls from `/api/show`.
   - Discover account-visible Codex models and reasoning capabilities from the authenticated model catalog.
