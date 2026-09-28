@@ -81,29 +81,31 @@ available because the Codex backend is used statelessly.
 ## Connect OpenCode from another computer
 
 Put the service behind TLS and an access-controlled network gateway, then add a
-custom Responses-capable OpenAI provider to OpenCode. Keep the Laiya API key in
-the client machine's secret configuration rather than committing it:
+custom Responses-compatible provider to OpenCode. Codex tool turns require
+`/v1/responses`; the Chat Completions adapter intentionally rejects them. Keep
+the Laiya API key in the client machine's secret configuration rather than
+committing it:
 
-```json
+```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "laiya": {
-      "npm": "@ai-sdk/openai",
-      "name": "Laiya Codex",
-      "options": {
-        "baseURL": "https://laiya.example.com/v1",
-        "apiKey": "<LAIYA_API_KEY>"
-      },
-      "models": {
-        "gpt-6-luna": {"name": "GPT-6 Luna"}
-      }
-    }
-  },
-  "model": "laiya/gpt-6-luna"
+	"$schema": "https://opencode.ai/config.json",
+	"providers": {
+		"laiya-codex": {
+			"name": "Laiya Codex",
+			"env": ["LAIYA_API_KEY"],
+			"package": "@opencode/ai/providers/openai-compatible/responses",
+			"settings": {
+				"baseURL": "https://laiya.example.com/v1",
+			},
+			"models": {
+				"gpt-6-luna": {"name": "GPT-6 Luna"},
+			},
+		},
+	},
+	"model": "laiya-codex/gpt-6-luna",
 }
 ```
 
-OpenCode uses `/v1/responses` for this provider. The model can return tool calls,
-which OpenCode executes on the client computer and reports back on subsequent
-requests; Laiya never executes client tools.
+The custom model list in OpenCode is configured explicitly. The model can return
+tool calls, which OpenCode executes on the client computer and reports back on
+subsequent requests; Laiya never executes client tools.

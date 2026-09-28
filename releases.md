@@ -3,6 +3,7 @@
 ## Unreleased
 
   - Discover account-visible Codex models from the authenticated model catalog.
+  - Document a Responses-compatible OpenCode provider for Codex tool calling.
 
 ## v0.0.2
 
