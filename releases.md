@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+  - Enrich discovered Ollama models with thinking controls from `/api/show`.
   - Discover account-visible Codex models and reasoning capabilities from the authenticated model catalog.
   - Document a Responses-compatible OpenCode provider for Codex tool calling.
 
