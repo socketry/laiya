@@ -73,6 +73,42 @@ token counts. OpenCode does not currently infer these custom fields from
 `limit.output` values on each client as well. The `context` limit should match
 the effective upstream model configuration (for Ollama, including `num_ctx`).
 
+## Expose Ollama Thinking Controls
+
+When Ollama model discovery is enabled, Laiya also queries `/api/show` for each
+model and publishes available thinking controls under `laiya.reasoning`. Named
+levels appear as `supported_efforts` with a `default_effort`; boolean-only
+controls appear as `thinking_values` with a `default_thinking`. If a model has
+no thinking metadata, advertises only `[false]`, or `/api/show` is unavailable,
+Laiya still lists it without reasoning metadata.
+
+The OpenAI-compatible proxy already forwards `reasoning_effort` requests to
+Ollama. OpenCode custom providers do not automatically turn Laiya's extension
+metadata into variants, so configure variants from the discovered values in
+each OpenCode model entry:
+
+```jsonc
+{
+	"providers": {
+		"laiya": {
+			"models": {
+				"qwen3-coder": {
+					"modelID": "qwen3-coder:latest",
+					"variants": [
+						{"id": "low", "body": {"reasoning_effort": "low"}},
+						{"id": "medium", "body": {"reasoning_effort": "medium"}},
+						{"id": "high", "body": {"reasoning_effort": "high"}},
+					],
+				},
+			},
+		},
+	},
+}
+```
+
+Only configure variants advertised by the selected model. Thinking metadata and
+supported levels are model-specific.
+
 ## Customize Discovery
 
 Subclass `Laiya::Models::Discover` to filter models or attach provider-specific
