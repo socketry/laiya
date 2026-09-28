@@ -206,13 +206,57 @@ describe Laiya::Provider::Codex do
 			provider&.close
 		end
 		
+		it "detects the installed Codex CLI version when no override is configured" do
+			status = Class.new do
+				def success?
+					true
+				end
+			end.new
+			catalog_client = Class.new do
+				attr :requests
+				
+				def initialize
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(models: [])]]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: nil, client: catalog_client)
+			response = nil
+			
+			mock(Open3) do |wrapper|
+				wrapper.replace(:capture2) do |*arguments|
+					expect(arguments).to be == ["codex", "--version"]
+					["codex-cli 0.157.0\n", status]
+				end
+				
+				response = provider.models
+			end
+			
+			expect(response.status).to be == 200
+			expect(catalog_client.requests.first.path).to be == "/backend-api/codex/models?client_version=0.157.0"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
 		it "requires a client version and rejects malformed catalogs" do
 			provider = subject.new(authentication: auth, client_version: nil, client: client)
-			response = provider.models
-			
-			expect(response.status).to be == 500
-			expect(JSON.parse(response.read).dig("error", "message")).to be(:include?, "CODEX_CLIENT_VERSION")
-			expect(client.requests).to be(:empty?)
+			response = nil
+			mock(Open3) do |wrapper|
+				wrapper.replace(:capture2) do |*arguments|
+					raise Errno::ENOENT
+				end
+				
+				response = provider.models
+				
+				expect(response.status).to be == 500
+				expect(JSON.parse(response.read).dig("error", "message")).to be(:include?, "CODEX_CLIENT_VERSION")
+				expect(client.requests).to be(:empty?)
+			end
 			response.close
 			
 			invalid_client = Class.new do

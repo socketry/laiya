@@ -5,6 +5,7 @@
 
 require "async/http"
 require "json"
+require "open3"
 require "protocol/http/body/streamable"
 require "securerandom"
 require "uri"
@@ -30,13 +31,14 @@ module Laiya
 			# Initialize the experimental ChatGPT Codex API adapter.
 			# @option :authentication [Interface(:credentials) | Nil] A credential source.
 			# @option :codex_home [String] The Codex home directory containing `auth.json`.
-			# @option :client_version [String | Nil] The Codex CLI version used to filter the model catalog.
+			# @option :client_version [String | Nil] The Codex CLI version used for model discovery; defaults to `CODEX_CLIENT_VERSION` or `codex --version`.
 			# @option :endpoint [String | Async::HTTP::Endpoint] The Codex backend endpoint.
 			# @option :client [Interface(:call) | Nil] An optional HTTP client.
 			def initialize(authentication: nil, codex_home: ENV.fetch("CODEX_HOME", Authentication::DEFAULT_CODEX_HOME), client_version: ENV["CODEX_CLIENT_VERSION"], endpoint: DEFAULT_ENDPOINT, client: nil, **client_options)
 				@endpoint = Async::HTTP::Endpoint[endpoint]
 				@authentication = authentication || Authentication.new(codex_home: codex_home)
 				@client_version = client_version
+				@client_version_detected = client_version && !client_version.empty?
 				@client = client || Async::HTTP::Client.new(@endpoint, **client_options)
 				@owns_client = client.nil?
 			end
@@ -46,17 +48,18 @@ module Laiya
 			# Fetch and normalize the authenticated Codex model catalog.
 			# @returns [Protocol::HTTP::Response] The OpenAI-compatible model list.
 			def models
-				unless @client_version && !@client_version.empty?
-					return error_response(500, "CODEX_CLIENT_VERSION is required for Codex model discovery", "server_error")
+				client_version = self.client_version
+				unless client_version
+					return error_response(500, "Set CODEX_CLIENT_VERSION or install the Codex CLI to discover models", "server_error")
 				end
 				
 				credentials = @authentication.credentials
-				upstream = request_models(credentials)
+				upstream = request_models(credentials, client_version)
 				
 				if upstream.status == 401
 					upstream.close
 					credentials = @authentication.credentials(refresh: true)
-					upstream = request_models(credentials)
+					upstream = request_models(credentials, client_version)
 				end
 				
 				unless upstream.status >= 200 && upstream.status < 300
@@ -137,8 +140,20 @@ module Laiya
 			
 			private
 			
-			def request_models(credentials)
-				path = "#{@endpoint.path.split("?", 2).first.sub(/\/+\z/, "")}/models?#{URI.encode_www_form(client_version: @client_version)}"
+			def client_version
+				return @client_version if @client_version_detected
+				
+				@client_version_detected = true
+				output, status = Open3.capture2("codex", "--version")
+				@client_version = output[/\bcodex(?:-cli)?\s+(\S+)/, 1] if status.success?
+				
+				return @client_version
+			rescue Errno::ENOENT
+				return nil
+			end
+			
+			def request_models(credentials, client_version)
+				path = "#{@endpoint.path.split("?", 2).first.sub(/\/+\z/, "")}/models?#{URI.encode_www_form(client_version: client_version)}"
 				
 				headers = Protocol::HTTP::Headers[
 					"accept" => "application/json",

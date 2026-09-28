@@ -17,7 +17,7 @@ configuration = Async::Service::Configuration.build do
 		
 		configuration do
 			Laiya::Configuration.build do |builder|
-				codex = Laiya::Provider::Codex.new(client_version: ENV.fetch("CODEX_CLIENT_VERSION"))
+				codex = Laiya::Provider::Codex.new
 				builder.provider :codex, codex, models: :discover
 				builder.default_provider :codex
 			end

@@ -34,7 +34,6 @@ Create a client key and start the service from the Laiya repository root:
 
 ```sh
 export LAIYA_API_KEY="$(openssl rand -hex 32)"
-export CODEX_CLIENT_VERSION="$(codex --version | cut -d ' ' -f2)"
 bundle install
 bundle exec ruby examples/chatgpt/service.rb
 ```
@@ -46,10 +45,11 @@ credentials used upstream.
 
 The Codex provider discovers account-visible, API-supported models from the
 authenticated Codex model catalog and refreshes the discovered list periodically.
-`CODEX_CLIENT_VERSION` must match the installed Codex CLI version because the
-catalog is filtered by client version. Set `CODEX_HOME` if the credential file
-is in a non-default directory. `LAIYA_URL` can change the bind endpoint; do not
-bind publicly without TLS and network access controls.
+The provider detects the installed Codex CLI version for the catalog request;
+set `CODEX_CLIENT_VERSION` to override it if the CLI is unavailable on the
+service's `PATH` or you need to use a different version. Set `CODEX_HOME` if the
+credential file is in a non-default directory. `LAIYA_URL` can change the bind
+endpoint; do not bind publicly without TLS and network access controls.
 
 ## Try it
 
