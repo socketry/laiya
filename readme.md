@@ -30,7 +30,7 @@ Please see the [project documentation](https://socketry.github.io/laiya/) for mo
 
 Please see the [project releases](https://socketry.github.io/laiya/releases/index) for all releases.
 
-### Unreleased
+### v0.0.2
 
   - Add Laiya's OpenAI-compatible HTTP API and Async::Service launcher.
   - Add OpenAI and Ollama providers with model discovery and configurable model limits.
