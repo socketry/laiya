@@ -5,8 +5,10 @@
 
 require "async/http"
 require "json"
+require "open3"
 require "protocol/http/body/streamable"
 require "securerandom"
+require "uri"
 
 require_relative "interface"
 require_relative "codex/authentication"
@@ -26,19 +28,65 @@ module Laiya
 			DEFAULT_ENDPOINT = "https://chatgpt.com/backend-api/codex"
 			USER_AGENT = "laiya-codex/0.0.0"
 			
+			# Return the configured or installed Codex CLI version.
+			# @returns [String | Nil] The Codex CLI version, or `nil` when it cannot be detected.
+			def self.client_version
+				if version = ENV["CODEX_CLIENT_VERSION"]
+					return version unless version.empty?
+				end
+				
+				output, status = Open3.capture2("codex", "--version")
+				return unless status.success?
+				
+				return output[/\bcodex(?:-cli)?\s+(\S+)/, 1]
+			rescue Errno::ENOENT
+				nil
+			end
+			
 			# Initialize the experimental ChatGPT Codex API adapter.
 			# @option :authentication [Interface(:credentials) | Nil] A credential source.
 			# @option :codex_home [String] The Codex home directory containing `auth.json`.
+			# @option :client_version [String | Nil] The Codex CLI version used for model discovery; defaults to `CODEX_CLIENT_VERSION` or `codex --version`.
 			# @option :endpoint [String | Async::HTTP::Endpoint] The Codex backend endpoint.
 			# @option :client [Interface(:call) | Nil] An optional HTTP client.
-			def initialize(authentication: nil, codex_home: ENV.fetch("CODEX_HOME", Authentication::DEFAULT_CODEX_HOME), endpoint: DEFAULT_ENDPOINT, client: nil, **client_options)
+			def initialize(authentication: nil, codex_home: ENV.fetch("CODEX_HOME", Authentication::DEFAULT_CODEX_HOME), client_version: ENV["CODEX_CLIENT_VERSION"], endpoint: DEFAULT_ENDPOINT, client: nil, **client_options)
 				@endpoint = Async::HTTP::Endpoint[endpoint]
 				@authentication = authentication || Authentication.new(codex_home: codex_home)
+				@client_version = client_version
+				@client_version_detected = client_version && !client_version.empty?
 				@client = client || Async::HTTP::Client.new(@endpoint, **client_options)
 				@owns_client = client.nil?
 			end
 			
 			attr :endpoint
+			
+			# Fetch and normalize the authenticated Codex model catalog.
+			# @returns [Protocol::HTTP::Response] The OpenAI-compatible model list.
+			def models
+				client_version = self.client_version
+				unless client_version
+					return error_response(500, "Set CODEX_CLIENT_VERSION or install the Codex CLI to discover models", "server_error")
+				end
+				
+				credentials = @authentication.credentials
+				upstream = request_models(credentials, client_version)
+				
+				if upstream.status == 401
+					upstream.close
+					credentials = @authentication.credentials(refresh: true)
+					upstream = request_models(credentials, client_version)
+				end
+				
+				unless upstream.status >= 200 && upstream.status < 300
+					return upstream
+				end
+				
+				model_catalog_response(upstream)
+			rescue Authentication::Error
+				error_response(502, "Codex authentication failed", "server_error")
+			rescue StandardError
+				error_response(502, "Codex model discovery failed", "server_error")
+			end
 			
 			# Convert supported Chat Completions requests or proxy Responses requests.
 			# @parameter request [Protocol::HTTP::Request] The incoming OpenAI-compatible request.
@@ -106,6 +154,85 @@ module Laiya
 			end
 			
 			private
+			
+			def client_version
+				return @client_version if @client_version_detected
+				
+				@client_version_detected = true
+				@client_version = self.class.client_version
+			end
+			
+			def request_models(credentials, client_version)
+				path = "#{@endpoint.path.split("?", 2).first.sub(/\/+\z/, "")}/models?#{URI.encode_www_form(client_version: client_version)}"
+				
+				headers = Protocol::HTTP::Headers[
+					"accept" => "application/json",
+					"authorization" => "Bearer #{credentials.fetch(:access_token)}",
+					"originator" => "laiya",
+					"user-agent" => USER_AGENT,
+				]
+				
+				if account_id = credentials[:account_id]
+					headers["chatgpt-account-id"] = account_id
+				end
+				
+				if residency = credentials[:residency]
+					headers["x-openai-internal-codex-residency"] = residency
+				end
+				
+				return @client.call(Protocol::HTTP::Request["GET", path, headers])
+			end
+			
+			def model_catalog_response(upstream)
+				payload = JSON.parse(upstream.read)
+				models = payload.fetch("models")
+				unless models.is_a?(Array)
+					return error_response(502, "Codex model catalog was invalid", "server_error")
+				end
+				
+				data = models.filter_map{|model| normalize_model(model)}
+				return Protocol::HTTP::Response[
+					200,
+					{"content-type" => "application/json"},
+					[JSON.dump(object: "list", data: data)],
+				]
+			rescue JSON::ParserError, KeyError, TypeError
+				error_response(502, "Codex model catalog was invalid", "server_error")
+			ensure
+				upstream.close
+			end
+			
+			def normalize_model(model)
+				return unless model.is_a?(Hash)
+				return unless model["supported_in_api"] == true && model["visibility"] == "list"
+				
+				id = model["slug"]
+				return unless id.is_a?(String) && !id.empty?
+				
+				metadata = {}
+				metadata["name"] = model["display_name"] if model["display_name"].is_a?(String)
+				if (context = model["context_window"]).is_a?(Integer) && context.positive?
+					metadata["limits"] = {"context" => context}
+				end
+				efforts = Array(model["supported_reasoning_levels"]).filter_map do |level|
+					level["effort"] if level.is_a?(Hash) && level["effort"].is_a?(String) && !level["effort"].empty?
+				end.uniq
+				if efforts.any?
+					reasoning = {"supported_efforts" => efforts}
+					if efforts.include?(default_effort = model["default_reasoning_level"])
+						reasoning["default_effort"] = default_effort
+					end
+					metadata["reasoning"] = reasoning
+				end
+				
+				{
+					"id" => id,
+					"object" => "model",
+					"created" => 0,
+					"owned_by" => "codex",
+					"laiya" => metadata,
+				}
+			end
 			
 			def request_codex(payload, request, credentials)
 				headers = Protocol::HTTP::Headers[

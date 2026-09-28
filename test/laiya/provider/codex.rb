@@ -59,6 +59,272 @@ describe Laiya::Provider::Codex do
 	end
 	let(:provider) {subject.new(authentication: auth, client: client)}
 	
+	with "#models" do
+		it "exposes the configured Codex client version" do
+			previous_version = ENV["CODEX_CLIENT_VERSION"]
+			ENV["CODEX_CLIENT_VERSION"] = "0.158.0"
+			
+			expect(subject.client_version).to be == "0.158.0"
+		ensure
+			if previous_version
+				ENV["CODEX_CLIENT_VERSION"] = previous_version
+			else
+				ENV.delete("CODEX_CLIENT_VERSION")
+			end
+		end
+		
+		it "fetches visible API-supported models and normalizes their metadata" do
+			catalog = {
+				models: [
+					{
+						slug: "gpt-visible",
+						display_name: "GPT Visible",
+						supported_in_api: true,
+						visibility: "list",
+						context_window: 272_000,
+						default_reasoning_level: "low",
+						supported_reasoning_levels: [
+							{effort: "low", description: "Fast"},
+							{effort: "medium", description: "Balanced"},
+							{effort: "low", description: "Duplicate"},
+							{description: "Missing an effort"},
+						],
+					},
+					{slug: "gpt-no-reasoning", display_name: "GPT No Reasoning", supported_in_api: true, visibility: "list"},
+					{slug: "gpt-hidden", display_name: "GPT Hidden", supported_in_api: true, visibility: "hide"},
+					{slug: "gpt-unsupported", display_name: "GPT Unsupported", supported_in_api: false, visibility: "list"},
+					{slug: "", supported_in_api: true, visibility: "list"},
+				],
+			}
+			upstream = Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(catalog)]]
+			client = Class.new do
+				attr :requests
+				
+				def initialize(response)
+					@response = response
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					@response
+				end
+			end.new(upstream)
+			authentication = Class.new do
+				def credentials(refresh: false)
+					{access_token: "test-token", account_id: "test-account", residency: "eu"}
+				end
+			end.new
+			provider = subject.new(authentication: authentication, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			models = JSON.parse(response.read).fetch("data")
+			request = client.requests.first
+			
+			expect(response.status).to be == 200
+			expect(request.method).to be == "GET"
+			expect(request.path).to be == "/backend-api/codex/models?client_version=0.157.0"
+			expect(request.headers["authorization"]).to be == "Bearer test-token"
+			expect(Array(request.headers["chatgpt-account-id"]).first).to be == "test-account"
+			expect(Array(request.headers["originator"]).first).to be == "laiya"
+			expect(Array(request.headers["x-openai-internal-codex-residency"]).first).to be == "eu"
+			expect(models).to be == [
+				{
+					"id" => "gpt-visible",
+					"object" => "model",
+					"created" => 0,
+					"owned_by" => "codex",
+					"laiya" => {
+						"name" => "GPT Visible",
+						"limits" => {"context" => 272_000},
+						"reasoning" => {"supported_efforts" => ["low", "medium"], "default_effort" => "low"},
+					},
+				},
+				{
+					"id" => "gpt-no-reasoning",
+					"object" => "model",
+					"created" => 0,
+					"owned_by" => "codex",
+					"laiya" => {"name" => "GPT No Reasoning"},
+				},
+			]
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "preserves upstream model catalog errors" do
+			upstream = Protocol::HTTP::Response[503, {"content-type" => "application/json"}, ['{"error":"unavailable"}']]
+			client = Class.new do
+				def initialize(response)
+					@response = response
+				end
+				
+				def call(_request)
+					@response
+				end
+			end.new(upstream)
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			
+			expect(response.status).to be == 503
+			expect(response.read).to be == '{"error":"unavailable"}'
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "maps authentication and unexpected model discovery failures to server errors" do
+			failing_authentication = Class.new do
+				def credentials(refresh: false)
+					raise Laiya::Provider::Codex::Authentication::Error
+				end
+			end.new
+			provider = subject.new(authentication: failing_authentication, client_version: "0.157.0", client: client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			expect(JSON.parse(response.read).dig("error", "message")).to be == "Codex authentication failed"
+			response.close
+			
+			unexpected_authentication = Class.new do
+				def credentials(refresh: false)
+					raise IOError, "Connection failed"
+				end
+			end.new
+			provider = subject.new(authentication: unexpected_authentication, client_version: "0.157.0", client: client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			expect(JSON.parse(response.read).dig("error", "message")).to be == "Codex model discovery failed"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "refreshes credentials and retries an unauthorized model request" do
+			authentication = Class.new do
+				attr :refresh_requests
+				
+				def initialize
+					@refresh_requests = []
+				end
+				
+				def credentials(refresh: false)
+					@refresh_requests << refresh
+					{access_token: refresh ? "new-token" : "old-token"}
+				end
+			end.new
+			responses = [
+				Protocol::HTTP::Response[401],
+				Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(models: [])]],
+			]
+			client = Class.new do
+				attr :requests
+				
+				def initialize(responses)
+					@responses = responses
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					@responses.shift
+				end
+			end.new(responses)
+			provider = subject.new(authentication: authentication, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			
+			expect(response.status).to be == 200
+			expect(authentication.refresh_requests).to be == [false, true]
+			expect(client.requests.length).to be == 2
+			expect(client.requests.last.headers["authorization"]).to be == "Bearer new-token"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "detects the installed Codex CLI version when no override is configured" do
+			status = Class.new do
+				def success?
+					true
+				end
+			end.new
+			catalog_client = Class.new do
+				attr :requests
+				
+				def initialize
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(models: [])]]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: nil, client: catalog_client)
+			response = nil
+			
+			mock(Open3) do |wrapper|
+				wrapper.replace(:capture2) do |*arguments|
+					expect(arguments).to be == ["codex", "--version"]
+					["codex-cli 0.157.0\n", status]
+				end
+				
+				response = provider.models
+			end
+			
+			expect(response.status).to be == 200
+			expect(catalog_client.requests.first.path).to be == "/backend-api/codex/models?client_version=0.157.0"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "requires a client version and rejects malformed catalogs" do
+			provider = subject.new(authentication: auth, client_version: nil, client: client)
+			response = nil
+			mock(Open3) do |wrapper|
+				wrapper.replace(:capture2) do |*arguments|
+					raise Errno::ENOENT
+				end
+				
+				response = provider.models
+				
+				expect(response.status).to be == 500
+				expect(JSON.parse(response.read).dig("error", "message")).to be(:include?, "CODEX_CLIENT_VERSION")
+				expect(client.requests).to be(:empty?)
+			end
+			response.close
+			
+			invalid_client = Class.new do
+				def call(_request)
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, ['{"models":{}}']]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: invalid_client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+			response.close
+			
+			malformed_client = Class.new do
+				def call(_request)
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, ["not json"]]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: malformed_client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+		ensure
+			response&.close
+			provider&.close
+		end
+	end
+	
 	with "#call" do
 		it "rejects unsupported methods and endpoints without contacting Codex" do
 			request = Protocol::HTTP::Request["GET", "/v1/models"]

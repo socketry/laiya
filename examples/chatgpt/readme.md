@@ -43,11 +43,13 @@ behind TLS and an access-controlled gateway. The service requires the caller to
 send the `LAIYA_API_KEY` as a Bearer token; this is separate from the Codex
 credentials used upstream.
 
-`LAIYA_CHATGPT_MODEL` selects the model exposed by `GET /v1/models` and sent to
-the Codex backend. It defaults to `gpt-6-luna`; set it to a model available to
-your account. Set `CODEX_HOME` if the credential file is in a non-default
-directory. `LAIYA_URL` can change the bind endpoint; do not bind publicly
-without TLS and network access controls.
+The Codex provider discovers account-visible, API-supported models from the
+authenticated Codex model catalog and refreshes the discovered list periodically.
+The provider detects the installed Codex CLI version for the catalog request;
+set `CODEX_CLIENT_VERSION` to override it if the CLI is unavailable on the
+service's `PATH` or you need to use a different version. Set `CODEX_HOME` if the
+credential file is in a non-default directory. `LAIYA_URL` can change the bind
+endpoint; do not bind publicly without TLS and network access controls.
 
 ## Try it
 
@@ -79,29 +81,43 @@ available because the Codex backend is used statelessly.
 ## Connect OpenCode from another computer
 
 Put the service behind TLS and an access-controlled network gateway, then add a
-custom Responses-capable OpenAI provider to OpenCode. Keep the Laiya API key in
-the client machine's secret configuration rather than committing it:
+custom Responses-compatible provider to OpenCode. Codex tool turns require
+`/v1/responses`; the Chat Completions adapter intentionally rejects them. Keep
+the Laiya API key in the client machine's secret configuration rather than
+committing it:
 
-```json
+```jsonc
 {
-  "$schema": "https://opencode.ai/config.json",
-  "provider": {
-    "laiya": {
-      "npm": "@ai-sdk/openai",
-      "name": "Laiya Codex",
-      "options": {
-        "baseURL": "https://laiya.example.com/v1",
-        "apiKey": "<LAIYA_API_KEY>"
-      },
-      "models": {
-        "gpt-6-luna": {"name": "GPT-6 Luna"}
-      }
-    }
-  },
-  "model": "laiya/gpt-6-luna"
+	"$schema": "https://opencode.ai/config.json",
+	"providers": {
+		"laiya-codex": {
+			"name": "Laiya Codex",
+			"env": ["LAIYA_API_KEY"],
+			"package": "@opencode/ai/providers/openai-compatible/responses",
+			"settings": {
+				"baseURL": "https://laiya.example.com/v1",
+			},
+			"models": {
+				"gpt-6-luna": {
+					"name": "GPT-6 Luna",
+					"variants": [
+						{"id": "low", "settings": {"reasoningEffort": "low"}},
+						{"id": "medium", "settings": {"reasoningEffort": "medium"}},
+						{"id": "high", "settings": {"reasoningEffort": "high"}},
+						{"id": "xhigh", "settings": {"reasoningEffort": "xhigh"}},
+						{"id": "max", "settings": {"reasoningEffort": "max"}},
+					],
+				},
+			},
+		},
+	},
+	"model": "laiya-codex/gpt-6-luna",
 }
 ```
 
-OpenCode uses `/v1/responses` for this provider. The model can return tool calls,
-which OpenCode executes on the client computer and reports back on subsequent
-requests; Laiya never executes client tools.
+Codex entries returned by `GET /v1/models` include the supported reasoning
+efforts in `laiya.reasoning.supported_efforts` and the default in
+`laiya.reasoning.default_effort`. Use those values to configure OpenCode's
+model variants; its custom-provider model list remains explicit. The model can
+return tool calls, which OpenCode executes on the client computer and reports
+back on subsequent requests; Laiya never executes client tools.
