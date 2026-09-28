@@ -59,6 +59,121 @@ describe Laiya::Provider::Codex do
 	end
 	let(:provider) {subject.new(authentication: auth, client: client)}
 	
+	with "#models" do
+		it "fetches visible API-supported models and normalizes their metadata" do
+			catalog = {
+				models: [
+					{slug: "gpt-visible", display_name: "GPT Visible", supported_in_api: true, visibility: "list", context_window: 272_000},
+					{slug: "gpt-hidden", display_name: "GPT Hidden", supported_in_api: true, visibility: "hide"},
+					{slug: "gpt-unsupported", display_name: "GPT Unsupported", supported_in_api: false, visibility: "list"},
+					{slug: "", supported_in_api: true, visibility: "list"},
+				],
+			}
+			upstream = Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(catalog)]]
+			client = Class.new do
+				attr :requests
+				
+				def initialize(response)
+					@response = response
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					@response
+				end
+			end.new(upstream)
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			models = JSON.parse(response.read).fetch("data")
+			request = client.requests.first
+			
+			expect(response.status).to be == 200
+			expect(request.method).to be == "GET"
+			expect(request.path).to be == "/backend-api/codex/models?client_version=0.157.0"
+			expect(request.headers["authorization"]).to be == "Bearer test-token"
+			expect(Array(request.headers["chatgpt-account-id"]).first).to be == "test-account"
+			expect(Array(request.headers["originator"]).first).to be == "laiya"
+			expect(models).to be == [{
+				"id" => "gpt-visible",
+				"object" => "model",
+				"created" => 0,
+				"owned_by" => "codex",
+				"laiya" => {"name" => "GPT Visible", "limits" => {"context" => 272_000}},
+			}]
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "refreshes credentials and retries an unauthorized model request" do
+			authentication = Class.new do
+				attr :refresh_requests
+				
+				def initialize
+					@refresh_requests = []
+				end
+				
+				def credentials(refresh: false)
+					@refresh_requests << refresh
+					{access_token: refresh ? "new-token" : "old-token"}
+				end
+			end.new
+			responses = [
+				Protocol::HTTP::Response[401],
+				Protocol::HTTP::Response[200, {"content-type" => "application/json"}, [JSON.dump(models: [])]],
+			]
+			client = Class.new do
+				attr :requests
+				
+				def initialize(responses)
+					@responses = responses
+					@requests = []
+				end
+				
+				def call(request)
+					@requests << request
+					@responses.shift
+				end
+			end.new(responses)
+			provider = subject.new(authentication: authentication, client_version: "0.157.0", client: client)
+			
+			response = provider.models
+			
+			expect(response.status).to be == 200
+			expect(authentication.refresh_requests).to be == [false, true]
+			expect(client.requests.length).to be == 2
+			expect(client.requests.last.headers["authorization"]).to be == "Bearer new-token"
+		ensure
+			response&.close
+			provider&.close
+		end
+		
+		it "requires a client version and rejects malformed catalogs" do
+			provider = subject.new(authentication: auth, client_version: nil, client: client)
+			response = provider.models
+			
+			expect(response.status).to be == 500
+			expect(JSON.parse(response.read).dig("error", "message")).to be(:include?, "CODEX_CLIENT_VERSION")
+			expect(client.requests).to be(:empty?)
+			response.close
+			
+			invalid_client = Class.new do
+				def call(_request)
+					Protocol::HTTP::Response[200, {"content-type" => "application/json"}, ['{"models":{}}']]
+				end
+			end.new
+			provider = subject.new(authentication: auth, client_version: "0.157.0", client: invalid_client)
+			response = provider.models
+			
+			expect(response.status).to be == 502
+		ensure
+			response&.close
+			provider&.close
+		end
+	end
+	
 	with "#call" do
 		it "rejects unsupported methods and endpoints without contacting Codex" do
 			request = Protocol::HTTP::Request["GET", "/v1/models"]

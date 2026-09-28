@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Discover account-visible Codex models from the authenticated model catalog.
+
 ## v0.0.2
 
   - Add Laiya's OpenAI-compatible HTTP API and Async::Service launcher.

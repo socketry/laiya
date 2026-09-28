@@ -17,8 +17,8 @@ configuration = Async::Service::Configuration.build do
 		
 		configuration do
 			Laiya::Configuration.build do |builder|
-				builder.provider :codex, Laiya::Provider::Codex.new
-				builder.model ENV.fetch("LAIYA_CHATGPT_MODEL", "gpt-6-luna"), provider: :codex
+				codex = Laiya::Provider::Codex.new(client_version: ENV.fetch("CODEX_CLIENT_VERSION"))
+				builder.provider :codex, codex, models: :discover
 				builder.default_provider :codex
 			end
 		end
