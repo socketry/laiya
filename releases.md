@@ -1,6 +1,7 @@
 # Releases
 
-## v0.0.1
+## Unreleased
 
-  - Add an OpenAI-compatible HTTP API with OpenAI and Ollama providers, model discovery, and model limits.
-  - Add an experimental ChatGPT Codex provider and an Async::Service launcher.
+- Add Laiya's OpenAI-compatible HTTP API and Async::Service launcher.
+- Add OpenAI and Ollama providers with model discovery and configurable model limits.
+- Add an experimental ChatGPT Codex provider using Codex CLI credentials.
